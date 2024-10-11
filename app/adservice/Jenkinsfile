@@ -1,0 +1,77 @@
+pipeline {
+    agent any
+
+    environment {
+        AWS_ACCOUNT_ID = '975049982453'  // Your AWS Account ID
+        REGION = 'ca-central-1'          // AWS Region
+        ECR_REPO = 'adservice'           // Microservice ECR repo name
+        IMAGE_TAG = "latest"
+        DOCKER_IMAGE = "${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com/${ECR_REPO}:${IMAGE_TAG}"
+    }
+
+    stages {
+        stage('Checkout Code') {
+            steps {
+                // Pull code from the working EC2 instance repo path
+                dir('/home/ubuntu/Google-Kubernetes-boilerplate/app/adservice') {
+                    script {
+                        echo 'Checking out adservice code from the local directory...'
+                    }
+                }
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    // Build the Docker image for adservice
+                    sh """
+                        docker build -t ${DOCKER_IMAGE} .
+                    """
+                }
+            }
+        }
+
+        stage('Login to AWS ECR') {
+            steps {
+                script {
+                    // Log in to AWS ECR
+                    sh """
+                        aws ecr get-login-password --region ${REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com
+                    """
+                }
+            }
+        }
+
+        stage('Push Image to ECR') {
+            steps {
+                script {
+                    // Push the Docker image to ECR
+                    sh """
+                        docker push ${DOCKER_IMAGE}
+                    """
+                }
+            }
+        }
+
+        stage('Deploy to Kubernetes') {
+            steps {
+                script {
+                    // Update the adservice image in Kubernetes deployment
+                    sh """
+                        kubectl set image deployment/adservice adservice=${DOCKER_IMAGE} -n default
+                    """
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo 'Adservice build and deployment successful.'
+        }
+        failure {
+            echo 'Adservice build or deployment failed.'
+        }
+    }
+}
